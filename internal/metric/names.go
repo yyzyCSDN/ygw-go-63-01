@@ -5,6 +5,7 @@ const (
 	NamePublish        = "registry.publish"
 	NameRoute          = "route.resolve"
 	NameFallback       = "fallback.execute"
+	NameFallbackError  = "fallback.error"
 	NameQuotaReject    = "quota.reject"
 	NameDispatchError  = "dispatch.error"
 	NameDispatchOK     = "dispatch.ok"
