@@ -157,13 +157,15 @@ func (r *Registry) ActiveVersion(modelName string) string {
 	return r.active[modelName]
 }
 
-// Lookup returns the active version record of a model.
+// Lookup returns the active version record of a model. An unregistered
+// model — one with no active version — reports ok=false so callers can
+// surface a model-not-found error instead of dereferencing a nil record.
 func (r *Registry) Lookup(modelName string) (*model.ModelVersion, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	version, ok := r.active[modelName]
 	if !ok {
-		return nil, true
+		return nil, false
 	}
 	v, ok := r.versions[modelName][version]
 	return v, ok
