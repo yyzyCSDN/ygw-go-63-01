@@ -2,6 +2,8 @@ package registry
 
 import (
 	"fmt"
+
+	"modelrouter/internal/metric"
 	"modelrouter/internal/model"
 )
 
@@ -13,12 +15,15 @@ func (r *Registry) SetAlias(alias, modelName, version string) error {
 			return fmt.Errorf("%w: %s@%s", model.ErrVersionNotFound, modelName, version)
 		}
 		r.aliases[alias] = model.AliasTarget{Model: modelName, Version: version}
+		r.bumpLocked()
 		return nil
 	}()
 	r.mu.Unlock()
 	if err != nil {
 		return err
 	}
+	r.rec.Inc(metric.NameAlias)
+	r.notify()
 	return nil
 }
 

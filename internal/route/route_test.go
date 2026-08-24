@@ -122,3 +122,83 @@ func TestSelectorPicksValidTarget(t *testing.T) {
 		t.Fatal("selector returned an empty target")
 	}
 }
+
+// TestResolveAliasReflectsRepoint reproduces the cached-alias symptom: once
+// the registry repoints the "stable" alias at a new version, the next
+// ResolveAlias call must route to the new version immediately, without any
+// stale v1 traffic leaking through the alias.
+func TestResolveAliasReflectsRepoint(t *testing.T) {
+	const (
+		modelName = "resnet"
+		v1, v2    = "v1", "v2"
+	)
+	// Two versions, each with one healthy instance at a distinct address so
+	// the selected target's version tells us which mapping was used.
+	summary := model.SyncSummary{
+		Models: []string{modelName},
+		Active: map[string]string{modelName: v1},
+		Instances: map[string][]*model.Instance{modelName: {
+			model.NewInstance(modelName, v1, "a", "10.0.0.1:9000"),
+		}},
+	}
+	reg := registry.New(&registry.StaticProvider{Summary: summary}, metric.NullRecorder{})
+	if err := reg.Sync(); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	// Register and publish v2 so the alias can point at it.
+	if _, err := reg.Register(modelName, v2); err != nil {
+		t.Fatalf("register v2: %v", err)
+	}
+	if err := reg.AddInstance(modelName, v2, "b", "10.0.0.2:9000"); err != nil {
+		t.Fatalf("add instance v2: %v", err)
+	}
+	if err := reg.Publish(modelName, v2); err != nil {
+		t.Fatalf("publish v2: %v", err)
+	}
+
+	ht := health.NewTracker(metric.NullRecorder{})
+	// Both versions' instances must be healthy for the selector to pick a
+	// target; observe them in the tracker the way the gateway does.
+	for _, inst := range reg.AllInstances() {
+		healthy := model.NewInstance(inst.Model, inst.Version, inst.ID, inst.Addr)
+		healthy.SetState(model.StateHealthy)
+		_ = ht.Observe(healthy)
+	}
+	table := NewTable(reg, ht, NewGrayManager(100), metric.NullRecorder{})
+	// Wire the change listener the same way the gateway does, so the route
+	// table refreshes its cached alias mapping whenever the registry mutates.
+	reg.SetOnChange(table.RefreshFromRegistry)
+
+	// Point stable at v1 first.
+	if err := reg.SetAlias("stable", modelName, v1); err != nil {
+		t.Fatalf("set alias v1: %v", err)
+	}
+	first, err := table.ResolveAlias("stable", "req-1")
+	if err != nil {
+		t.Fatalf("resolve alias v1: %v", err)
+	}
+	if first.Version != v1 {
+		t.Fatalf("first resolve = %s, want %s", first.Version, v1)
+	}
+
+	// Ops repoints stable to v2. The very next resolution must use v2 — no
+	// stale v1 traffic may reach stable.
+	if err := reg.SetAlias("stable", modelName, v2); err != nil {
+		t.Fatalf("set alias v2: %v", err)
+	}
+	second, err := table.ResolveAlias("stable", "req-1")
+	if err != nil {
+		t.Fatalf("resolve alias v2: %v", err)
+	}
+	if second.Version != v2 {
+		t.Fatalf("after repoint, resolve = %s, want %s (alias cache not invalidated)", second.Version, v2)
+	}
+	if second.Target.Version != v2 {
+		t.Fatalf("after repoint, target version = %s, want %s", second.Target.Version, v2)
+	}
+	// Sanity: the registry's own alias target must also reflect v2.
+	target, ok := reg.ResolveAlias("stable")
+	if !ok || target.Version != v2 {
+		t.Fatalf("registry alias target = %+v ok=%v, want v2", target, ok)
+	}
+}

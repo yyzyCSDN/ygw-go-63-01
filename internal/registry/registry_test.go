@@ -94,6 +94,52 @@ func TestAliasMapDirect(t *testing.T) {
 	}
 }
 
+func TestSetAliasNotifiesListeners(t *testing.T) {
+	// SetAlias must advance the generation and fire the onChange callback
+	// so the route table refreshes its cached alias mapping immediately.
+	reg := New(&StaticProvider{}, metric.NullRecorder{})
+	_, _ = reg.Register("resnet", "v1")
+	_, _ = reg.Register("resnet", "v2")
+	_ = reg.AddInstance("resnet", "v1", "a", "10.0.0.1:9000")
+	_ = reg.AddInstance("resnet", "v2", "b", "10.0.0.2:9000")
+	if err := reg.Publish("resnet", "v1"); err != nil {
+		t.Fatalf("publish v1: %v", err)
+	}
+	if err := reg.Publish("resnet", "v2"); err != nil {
+		t.Fatalf("publish v2: %v", err)
+	}
+
+	notified := 0
+	reg.SetOnChange(func() { notified++ })
+
+	if err := reg.SetAlias("stable", "resnet", "v1"); err != nil {
+		t.Fatalf("set alias v1: %v", err)
+	}
+	genV1 := reg.Generation()
+	if notified == 0 {
+		t.Fatal("SetAlias must notify listeners")
+	}
+	if genV1 == 0 {
+		t.Fatal("SetAlias must advance the generation")
+	}
+
+	if err := repoint("stable", reg); err != nil {
+		t.Fatalf("set alias v2: %v", err)
+	}
+	if reg.Generation() == genV1 {
+		t.Fatal("repointing the alias must advance the generation")
+	}
+	target, ok := reg.ResolveAlias("stable")
+	if !ok || target.Version != "v2" {
+		t.Fatalf("alias target = %+v ok=%v, want v2", target, ok)
+	}
+}
+
+// repoint is a small helper so the test reads as "stable now points at v2".
+func repoint(alias string, reg *Registry) error {
+	return reg.SetAlias(alias, "resnet", "v2")
+}
+
 func TestSnapshotStates(t *testing.T) {
 	reg := New(&StaticProvider{}, metric.NullRecorder{})
 	_, _ = reg.Register("resnet", "v1")
