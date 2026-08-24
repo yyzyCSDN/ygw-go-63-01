@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>ModelRouter 控制台</title>
+<style>
+body { font-family: "Microsoft YaHei", Arial, sans-serif; margin: 2rem; background: #f5f7fa; color: #222; }
+h1 { font-size: 1.4rem; }
+.panel { background: #fff; border: 1px solid #dde2e8; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #e2e6ea; padding: 0.4rem 0.6rem; text-align: left; font-size: 0.9rem; }
+.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 10px; font-size: 0.8rem; }
+.badge.ok { background: #e6f7ec; color: #1a7f37; }
+.badge.err { background: #fde8e8; color: #b42318; }
+</style>
+</head>
+<body>
+<h1>ModelRouter 控制台</h1>
+<div class="panel">
+  <button id="refresh">刷新</button>
+  <span id="health" class="badge ok">连接中…</span>
+</div>
+<div class="panel">
+  <h2>模型路由表</h2>
+  <table id="models"><thead><tr><th>模型</th><th>路由版本</th></tr></thead><tbody></tbody></table>
+</div>
+<div class="panel">
+  <h2>健康实例</h2>
+  <table id="instances"><thead><tr><th>实例 ID</th><th>地址</th></tr></thead><tbody></tbody></table>
+</div>
+<script>
+async function refresh() {
+  const healthEl = document.getElementById('health');
+  try {
+    const health = await fetch('/v1/healthz').then(r => r.json());
+    healthEl.textContent = health.status === 'ok' ? '健康' : '异常';
+    healthEl.className = 'badge ' + (health.status === 'ok' ? 'ok' : 'err');
+  } catch (e) {
+    healthEl.textContent = '不可达';
+    healthEl.className = 'badge err';
+  }
+  const models = await fetch('/v1/admin/models').then(r => r.json());
+  const modelBody = document.querySelector('#models tbody');
+  modelBody.innerHTML = '';
+  for (const name of models.models || []) {
+    const row = document.createElement('tr');
+    row.innerHTML = '<td>' + name + '</td><td>' + (models.active[name] || '-') + '</td>';
+    modelBody.appendChild(row);
+  }
+  const instances = await fetch('/v1/admin/instances').then(r => r.json());
+  const instBody = document.querySelector('#instances tbody');
+  instBody.innerHTML = '';
+  for (const inst of instances.healthy || []) {
+    const row = document.createElement('tr');
+    row.innerHTML = '<td>' + inst.ID + '</td><td>' + inst.Addr + '</td>';
+    instBody.appendChild(row);
+  }
+}
+document.getElementById('refresh').addEventListener('click', refresh);
+refresh();
+</script>
+</body>
+</html>
