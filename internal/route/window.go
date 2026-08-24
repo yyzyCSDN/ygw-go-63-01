@@ -21,7 +21,7 @@ func (w GrayWindow) Split(total int) (int, int) {
 	if w.Ratio >= 1 {
 		return total, 0
 	}
-	gray := int(float64(total)*w.Ratio) * 2
+	gray := int(float64(total) * w.Ratio)
 	if gray > total {
 		gray = total
 	}

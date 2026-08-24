@@ -183,8 +183,9 @@ func (g *GrayManager) Decide(modelName string) bool {
 	total := g.period
 	g.seq[modelName] = seq + 1
 	if g.seq[modelName] >= total {
-		gray, _ := window.Split(total)
-		g.seq[modelName] = gray
+		// Start a fresh, non-overlapping window at position 0 so the gray
+		// segment [0, gray) is never carried across the boundary.
+		g.seq[modelName] = 0
 	}
 	return window.Contains(seq, total)
 }
