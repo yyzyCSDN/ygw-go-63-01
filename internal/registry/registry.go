@@ -120,9 +120,12 @@ func (r *Registry) publishLocked(modelName, version string) error {
 	}
 	v.State = model.StateActive
 	v.Published = true
-	if r.active[modelName] == "" {
-		r.active[modelName] = version
-	}
+	// Publishing a version always makes it the active target for its model so
+	// the route table refresh that follows notify() points at the newly
+	// published version. Keeping the previous active entry would leave live
+	// traffic pinned to the old version even though the registry reports the
+	// new one as active.
+	r.active[modelName] = version
 	r.bumpLocked()
 	return nil
 }
